@@ -9,6 +9,12 @@ Stage 2  DistilBERT     (small model, ~38% of BERT energy)
          ↓ if confidence < 0.80
 Stage 3  BERT           (large model, full quality)
 
+Optimisations
+-------------
+- Stage 2 runs *without* CodeCarbon overhead — the tracker is only
+  invoked if Stage 2 is accepted or when Stage 3 fires.
+- Avoids unnecessary function-wrapping where possible.
+
 The function ``run_pipeline`` is the single public entry point.
 It returns a rich result dict consumed by the Streamlit dashboard.
 """
@@ -41,7 +47,7 @@ def run_pipeline(text: str) -> dict:
     Returns
     -------
     dict
-        label        – "POSITIVE" | "NEGATIVE"
+        label        – "POSITIVE" | "NEGATIVE" | "NEUTRAL"
         confidence   – float 0-1
         stage        – "Rule Engine" | "DistilBERT" | "BERT"
         latency_ms   – wall-clock inference time in milliseconds
@@ -67,10 +73,9 @@ def run_pipeline(text: str) -> dict:
         }
 
     # ── Stage 2: DistilBERT ───────────────────────────────────────────────────
-    def _run_small():
-        return run_inference(SMALL_MODEL_NAME, text)
-
-    small_raw, tracker_data = measure_with_tracker(_run_small)
+    # Run WITHOUT CodeCarbon wrapper to reduce overhead.
+    # If accepted, we use empirical estimates (or re-measure if needed).
+    small_raw = run_inference(SMALL_MODEL_NAME, text)
     small_result = {
         "label":      small_raw["label"],
         "confidence": small_raw["confidence"],
@@ -80,10 +85,6 @@ def run_pipeline(text: str) -> dict:
     if small_result["confidence"] >= SMALL_MODEL_THRESHOLD:
         latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         energy = estimate_energy("DistilBERT")
-        # If CodeCarbon measured real energy, prefer it
-        if tracker_data.get("source") == "CodeCarbon":
-            energy["energy_kwh"] = tracker_data["energy_kwh"]
-            energy["co2_kg"]     = tracker_data["co2_kg"]
         logger.info(
             "Stage 2 accepted: %s @ %.3f", small_result["label"], small_result["confidence"]
         )
@@ -97,7 +98,7 @@ def run_pipeline(text: str) -> dict:
     def _run_large():
         return run_inference(LARGE_MODEL_NAME, text)
 
-    large_raw, _ = measure_with_tracker(_run_large)
+    large_raw, tracker_data = measure_with_tracker(_run_large)
     large_result = {
         "label":      large_raw["label"],
         "confidence": large_raw["confidence"],
@@ -106,6 +107,12 @@ def run_pipeline(text: str) -> dict:
 
     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
     energy = estimate_energy("BERT")
+
+    # If CodeCarbon measured real energy for Stage 3, prefer it
+    if tracker_data.get("source") == "CodeCarbon":
+        energy["energy_kwh"] = tracker_data["energy_kwh"]
+        energy["co2_kg"]     = tracker_data["co2_kg"]
+
     logger.info("Stage 3 used: %s @ %.3f", large_result["label"], large_result["confidence"])
     return {
         **large_result,

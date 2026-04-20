@@ -38,6 +38,7 @@ from dashboard_utils import (
     STAGE_COLOURS,
 )
 from ollama_dashboard import render_dashboard
+from comparative_dashboard import render_comparative_dashboard
 
 # ── Page configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -193,8 +194,8 @@ with st.sidebar:
     st.markdown("### 🧭 Navigation")
     app_mode = st.radio(
         "Select Dashboard", 
-        ["Sentiment Tracker", "Ollama Compare"],
-        help="Switch between the original Carbon-Aware sentiment analysis and the new Ollama model comparison tool."
+        ["Sentiment Tracker", "Ollama Compare", "Comparative Analysis"],
+        help="Switch between the sentiment tracker, Ollama model comparison, or the head-to-head comparative analysis."
     )
     st.markdown("---")
 
@@ -474,6 +475,10 @@ if app_mode == "Sentiment Tracker":
         unsafe_allow_html=True,
     )
 
-else:
+elif app_mode == "Ollama Compare":
     # ── OLLAMA COMPARE DASHBOARD ──────────────────────────────────────────────
     render_dashboard()
+
+else:
+    # ── COMPARATIVE ANALYSIS DASHBOARD ────────────────────────────────────────
+    render_comparative_dashboard()

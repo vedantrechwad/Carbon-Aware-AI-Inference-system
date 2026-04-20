@@ -55,6 +55,19 @@ def load_model(model_name: str) -> Any:
     return _cache[model_name]
 
 
+def preload_models() -> None:
+    """
+    Eagerly load all pipeline models into the cache.
+
+    Call once at application startup (e.g. from ``app.py``) to avoid
+    cold-start latency on the first user request.
+    """
+    from config import SMALL_MODEL_NAME, LARGE_MODEL_NAME
+    for name in (SMALL_MODEL_NAME, LARGE_MODEL_NAME):
+        load_model(name)
+    logger.info("All models pre-loaded into cache.")
+
+
 def run_inference(model_name: str, text: str) -> dict:
     """
     Run sentiment inference and return a normalised result dict.
@@ -71,7 +84,8 @@ def run_inference(model_name: str, text: str) -> dict:
     dict with keys ``label`` (str) and ``confidence`` (float 0-1).
     """
     clf = load_model(model_name)
-    raw = clf(text)[0]          # [{'label': 'POSITIVE', 'score': 0.99}]
+    # top_k=1: only compute the best prediction — skip sorting all classes
+    raw = clf(text, top_k=1)[0]
     
     # Handle different label formats from different models
     label = raw["label"].upper()
@@ -84,6 +98,12 @@ def run_inference(model_name: str, text: str) -> dict:
         "NEG": "NEGATIVE",
         "NEU": "NEUTRAL",
         "POS": "POSITIVE",
+        # nlptown/bert-base-multilingual-uncased-sentiment uses star ratings
+        "1 STAR": "NEGATIVE",
+        "2 STARS": "NEGATIVE",
+        "3 STARS": "NEUTRAL",
+        "4 STARS": "POSITIVE",
+        "5 STARS": "POSITIVE",
     }
     
     label = label_mapping.get(label, label)
